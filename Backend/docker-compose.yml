@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: krishisutra-mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: krishisutra
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: krishisutra-ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    command: ["serve"]
+
+  app:
+    build: .
+    container_name: krishisutra-app
+    restart: always
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mongo
+      - ollama
+    volumes:
+      - ./app:/app
+      - ./data:/app/data
+      - ./ml:/app/ml
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/krishisutra
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - ENABLE_SCHEDULER=true
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+volumes:
+  mongo_data:
+  ollama_data:

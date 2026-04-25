@@ -1,0 +1,6 @@
+(venv) PS D:\AuraFarm\KrishiSutra AI\backend> python -m app.ml.crop_recommender data/crop_recommendation.csv
+2026-04-25 03:14:28.446 | INFO     | __main__:train:45 - RF Accuracy: 0.9932
+2026-04-25 03:14:31.137 | INFO     | __main__:train:50 - XGB Accuracy: 0.9841
+2026-04-25 03:14:31.353 | INFO     | __main__:train:56 - Models saved to D:\AuraFarm\KrishiSutra AI\backend\ml\models
+(venv) PS D:\AuraFarm\KrishiSutra AI\backend> 
+
