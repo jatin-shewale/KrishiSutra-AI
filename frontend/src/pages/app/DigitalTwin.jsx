@@ -11,9 +11,11 @@ export default function DigitalTwin() {
   const [fertilizer, setFertilizer] = useState(100)
   const [running, setRunning] = useState(false)
   const [results, setResults] = useState(null)
+  const [error, setError] = useState('')
 
   const runSimulation = async () => {
     setRunning(true)
+    setError('')
     try {
       const data = await simulateFarm({
         base_crop: 'cotton',
@@ -25,6 +27,8 @@ export default function DigitalTwin() {
       setResults(data)
     } catch (error) {
       console.error('Simulation failed:', error)
+      setResults(null)
+      setError(error?.response?.data?.detail || error?.message || 'Simulation failed')
     } finally {
       setRunning(false)
     }
@@ -100,6 +104,12 @@ export default function DigitalTwin() {
                 <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{results.ai_recommendation}</p>
               </GlassCard>
             </motion.div>
+          )}
+
+          {error && !running && (
+            <GlassCard className="border border-red-500/20 bg-red-500/5">
+              <p className="text-sm text-red-300">{error}</p>
+            </GlassCard>
           )}
 
           {!results && !running && (

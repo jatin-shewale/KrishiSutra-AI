@@ -4,6 +4,7 @@ import aiofiles
 from fastapi import UploadFile
 import loguru
 from app.services.ollama_service import generate_text_async
+from app.config import settings
 
 logger = loguru.logger
 _classifier = None
@@ -27,6 +28,41 @@ def get_classifier() -> DiseaseClassifier:
         except:
             logger.warning("Disease model not found, run training first")
     return _classifier
+
+def _fallback_disease_explanation(result: dict, treatment_info: dict) -> str:
+    confidence_pct = round(result.get("confidence", 0) * 100)
+    disease_name = result.get("disease", "The detected disease")
+    severity = str(result.get("severity", "medium")).lower()
+    severity_text = "needs immediate attention" if severity == "high" else "should be monitored closely" if severity == "medium" else "looks manageable right now"
+    products = ", ".join(treatment_info.get("recommended_products", [])[:2]) or "locally recommended plant protection products"
+    return (
+        f"{disease_name} was detected with confidence {confidence_pct}%. "
+        f"It {severity_text}. Start with {treatment_info.get('treatment')} "
+        f"Recommended products include {products}. "
+        f"Prevention focus: {treatment_info.get('prevention')} "
+        f"Spray guidance: {treatment_info.get('spray_advice')} "
+        f"Over the next 3 to 5 days, monitor whether new leaves show fresh lesions, curling, yellowing, or rapid spread."
+    )
+
+async def _build_disease_explanation(result: dict, treatment_info: dict) -> str:
+    fallback = _fallback_disease_explanation(result, treatment_info)
+    if not settings.ENABLE_DISEASE_AI_EXPLANATION:
+        return fallback
+
+    try:
+        return await generate_text_async(
+            prompt=(
+                "Explain a crop disease diagnosis for a farmer.\n"
+                f"Diagnosis result: {result}\n"
+                f"Treatment info: {treatment_info}\n\n"
+                "Explain what the disease means, why the spray is recommended, what precautions to take, and what to monitor over the next few days."
+            ),
+            system="You are a plant pathologist helping a farmer with practical disease management.",
+            timeout=settings.DISEASE_AI_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        logger.warning(f"Falling back to deterministic disease explanation: {exc}")
+        return fallback
 
 async def save_upload(file: UploadFile, upload_dir="data/uploads") -> str:
     Path(upload_dir).mkdir(parents=True, exist_ok=True)
@@ -63,23 +99,7 @@ async def diagnose_disease(image_path: str):
     if not risk_level:
         risk_level = "High" if str(severity).lower() in {"high", "critical"} else "Medium" if str(severity).lower() == "moderate" else "Low"
 
-    ai_explanation = None
-    try:
-        ai_explanation = await generate_text_async(
-            prompt=(
-                "Explain a crop disease diagnosis for a farmer.\n"
-                f"Diagnosis result: {result}\n"
-                f"Treatment info: {treatment_info}\n\n"
-                "Explain what the disease means, why the spray is recommended, what precautions to take, and what to monitor over the next few days."
-            ),
-            system="You are a plant pathologist helping a farmer with practical disease management.",
-            timeout=60,
-        )
-    except Exception:
-        ai_explanation = (
-            f"{result.get('disease')} was detected with confidence {round(result.get('confidence', 0) * 100)}%. "
-            f"Start with {treatment_info.get('treatment')} and watch new leaves for spread."
-        )
+    ai_explanation = await _build_disease_explanation(result, treatment_info)
 
     return {
         **result,

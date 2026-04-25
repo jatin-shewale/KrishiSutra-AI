@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from app.api.schemas.subsidy_schemas import *
-from app.services.subsidy_service import fetch_latest_schemes, get_schemes_from_db, search_circulars, generate_subsidy_alerts
+from app.services.subsidy_service import fetch_latest_schemes, fetch_latest_schemes_with_report, get_schemes_from_db, search_circulars, generate_subsidy_alerts
 from app.api.routes.auth import get_current_user
 from app.rag.circular_rag import get_rag
 
@@ -12,8 +12,12 @@ async def latest_schemes(user=Depends(get_current_user)):
 
 @router.post("/fetch-schemes")
 async def fetch_schemes(user=Depends(get_current_user)):
-    items = await fetch_latest_schemes()
-    return {"fetched": len(items), "items": items}
+    result = await fetch_latest_schemes_with_report()
+    return {
+        "fetched": len(result["items"]),
+        "items": result["items"],
+        "report": result["report"],
+    }
 
 @router.post("/search-circulars", response_model=SearchCircularResponse)
 async def search_circ(req: SearchCircularRequest, user=Depends(get_current_user)):

@@ -6,6 +6,8 @@ from app.db.mongo import mongo
 from app.api.routes import auth, crop, disease, irrigation, market, subsidy, copilot, simulation, alerts, planner
 from app.tasks.scheduler import start_scheduler, stop_scheduler
 from app.config import settings
+from app.services.crop_service import get_recommender
+from app.services.disease_service import get_classifier
 
 DEV_ALLOWED_ORIGINS = [
     "http://localhost:3000",
@@ -18,6 +20,16 @@ DEV_ALLOWED_ORIGINS = [
 async def lifespan(app: FastAPI):
     logger.info("Starting KrishiSutra AI Backend...")
     await mongo.connect()
+    try:
+        get_recommender()
+        logger.info("Crop recommender preloaded during startup")
+    except Exception as exc:
+        logger.warning(f"Crop recommender preload skipped: {exc}")
+    try:
+        get_classifier()
+        logger.info("Disease classifier preloaded during startup")
+    except Exception as exc:
+        logger.warning(f"Disease classifier preload skipped: {exc}")
     start_scheduler()
     yield
     stop_scheduler()

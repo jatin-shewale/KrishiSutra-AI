@@ -6,7 +6,8 @@ export const detectDisease = async (imageFile) => {
   
   try {
     const response = await api.post('/disease/detect-disease', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
     })
     return response.data
   } catch (error) {

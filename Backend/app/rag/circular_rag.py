@@ -54,6 +54,18 @@ class CircularRAG:
         vectorstore.add_documents(docs)
         logger.info(f"Added {len(docs)} circular chunks to Chroma")
 
+    def _fallback_answer(self, query: str, docs: list) -> str:
+        if not docs:
+            return "No indexed circulars found yet. Run a scheme fetch to populate Chroma."
+        top_titles = [doc.metadata.get("title") for doc in docs if doc.metadata.get("title")]
+        snippets = [doc.page_content.strip().replace("\n", " ")[:220] for doc in docs[:2] if doc.page_content.strip()]
+        title_text = ", ".join(top_titles[:3]) if top_titles else "indexed circular documents"
+        snippet_text = " ".join(snippets)
+        return (
+            f"Based on {title_text}, the current indexed circulars suggest: {snippet_text} "
+            "This is a retrieval-based fallback summary because the AI generation layer is unavailable right now."
+        )
+
     async def ask(self, query: str) -> dict:
         try:
             vectorstore = self.get_vectorstore()
@@ -73,12 +85,20 @@ class CircularRAG:
             answer = await generate_text_async(
                 prompt=prompt,
                 system="You are an agricultural policy assistant summarizing government circulars.",
-                timeout=75,
+                timeout=settings.RAG_TIMEOUT_SECONDS,
             )
             return {"answer": answer, "sources": sources}
         except Exception as exc:
             logger.error(f"RAG query error: {exc}")
-            return {"answer": f"Error processing query: {exc}", "sources": []}
+            try:
+                vectorstore = self.get_vectorstore()
+                docs = vectorstore.similarity_search(query, k=4)
+                return {
+                    "answer": self._fallback_answer(query, docs),
+                    "sources": [doc.metadata for doc in docs if doc.metadata],
+                }
+            except Exception:
+                return {"answer": f"Error processing query: {exc}", "sources": []}
 
 
 _rag_instance = None

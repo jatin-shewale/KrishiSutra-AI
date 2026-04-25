@@ -1,20 +1,28 @@
 import { motion } from 'framer-motion'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FaCheckCircle, FaCloudUploadAlt, FaExclamationTriangle, FaLeaf, FaShieldAlt } from 'react-icons/fa'
 import { FiActivity } from 'react-icons/fi'
 import { detectDisease } from '../../services/diseaseService'
 import GlassCard from '../../components/ui/GlassCard'
+import { useAuth } from '../../context/AuthContext'
+import { loadAnalysisHistory, saveAnalysisHistory } from '../../services/analysisHistory'
 
 const severityColor = { Low: 'text-emerald-400', Moderate: 'text-yellow-400', High: 'text-red-400', Critical: 'text-red-600', high: 'text-red-400', medium: 'text-yellow-400', low: 'text-emerald-400' }
 const severityBg = { Low: 'bg-emerald-500/20', Moderate: 'bg-yellow-500/20', High: 'bg-red-500/20', Critical: 'bg-red-600/20', high: 'bg-red-500/20', medium: 'bg-yellow-500/20', low: 'bg-emerald-500/20' }
 
 export default function DiseaseDiagnosis() {
+  const { user } = useAuth()
   const [dragActive, setDragActive] = useState(false)
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+  const [history, setHistory] = useState([])
+
+  useEffect(() => {
+    setHistory(loadAnalysisHistory('disease', user?.email || user?.id || 'guest'))
+  }, [user])
 
   const handleFile = (incomingFile) => {
     if (!incomingFile) return
@@ -32,8 +40,19 @@ export default function DiseaseDiagnosis() {
       const response = await detectDisease(file)
       if (response.error) throw new Error(response.error)
       setResult(response)
+      const nextHistory = saveAnalysisHistory('disease', user?.email || user?.id || 'guest', {
+        id: `${Date.now()}-${file.name}`,
+        timestamp: new Date().toISOString(),
+        fileName: file.name,
+        disease: response.disease,
+        severity: response.severity,
+        confidence: response.confidence,
+        riskLevel: response.riskLevel,
+      })
+      setHistory(nextHistory)
     } catch (err) {
-      setError(err.message || 'Failed to analyze image')
+      const backendMessage = err?.response?.data?.detail || err?.message || 'Failed to analyze image'
+      setError(backendMessage)
     } finally {
       setAnalyzing(false)
     }
@@ -85,6 +104,23 @@ export default function DiseaseDiagnosis() {
                 <li key={tip} className="flex items-center gap-2"><span className="w-1 h-1 rounded-full bg-emerald-400" />{tip}</li>
               ))}
             </ul>
+          </GlassCard>
+
+          <GlassCard>
+            <h3 className="font-semibold mb-4">Recent Disease Analyses</h3>
+            <div className="space-y-3">
+              {history.length > 0 ? history.map((item) => (
+                <div key={item.id} className="p-3 glass bg-white/5 border border-white/5 rounded-xl">
+                  <div className="text-sm font-semibold text-emerald-400">{item.disease}</div>
+                  <div className="text-xs text-gray-400 mt-1">{item.fileName}</div>
+                  <div className="text-[11px] text-gray-500 mt-1">
+                    {Math.round((item.confidence || 0) * 100)}% confidence, {item.severity} severity, {item.riskLevel} risk
+                  </div>
+                </div>
+              )) : (
+                <div className="text-sm text-gray-500">No disease analysis history yet. Upload a leaf image and click Diagnose to save results.</div>
+              )}
+            </div>
           </GlassCard>
         </div>
 

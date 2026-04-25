@@ -6,6 +6,7 @@ from pathlib import Path
 import loguru
 from typing import List, Dict
 import time
+from requests.exceptions import RequestException
 
 logger = loguru.logger
 
@@ -235,12 +236,28 @@ class GovCircularScraper:
     def __init__(self, user_agent="KrishiSutra/1.0"):
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": user_agent})
+        self.last_run_report = {
+            "total_sources": 0,
+            "successful_sources": 0,
+            "failed_sources": 0,
+            "failures": [],
+        }
+
+    def _record_failure(self, source: Dict, error: Exception):
+        self.last_run_report["failed_sources"] += 1
+        self.last_run_report["failures"].append({
+            "source": source["name"],
+            "url": source["url"],
+            "error": str(error),
+            "error_type": type(error).__name__,
+        })
 
     def scrape_html(self, source: Dict) -> List[Dict]:
         keywords = source.get("keywords", ["scheme", "circular", "notification"])
         selector = ", ".join(f"a[href*='{kw}']" for kw in keywords)
         try:
             resp = self.session.get(source["url"], timeout=10)
+            resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "html.parser")
             items = []
             seen_urls = set()
@@ -257,8 +274,14 @@ class GovCircularScraper:
                             "type": "html",
                             "is_pdf": full_url.lower().endswith(".pdf"),
                         })
+            self.last_run_report["successful_sources"] += 1
             return items
+        except RequestException as e:
+            self._record_failure(source, e)
+            logger.warning(f"Skipping source due to network/request issue {source['url']}: {e}")
+            return []
         except Exception as e:
+            self._record_failure(source, e)
             logger.error(f"Scrape error {source['url']}: {e}")
             return []
 
@@ -266,6 +289,7 @@ class GovCircularScraper:
         Path(save_dir).mkdir(parents=True, exist_ok=True)
         try:
             resp = self.session.get(pdf_url, timeout=15)
+            resp.raise_for_status()
             filename = pdf_url.split("/")[-1] or "document.pdf"
             pdf_path = Path(save_dir) / filename
             pdf_path.write_bytes(resp.content)
@@ -279,6 +303,12 @@ class GovCircularScraper:
             return ""
 
     def run_all(self, extract_pdfs: bool = False) -> List[Dict]:
+        self.last_run_report = {
+            "total_sources": len(GOV_SOURCES),
+            "successful_sources": 0,
+            "failed_sources": 0,
+            "failures": [],
+        }
         all_items = []
         for src in GOV_SOURCES:
             logger.info(f"Scraping [{src['type'].upper()}] {src['name']} ...")
@@ -286,6 +316,7 @@ class GovCircularScraper:
                 # Directly extract PDF text for known PDF sources
                 text = self.extract_pdf_text(src["url"])
                 if text:
+                    self.last_run_report["successful_sources"] += 1
                     all_items.append({
                         "title": src["name"],
                         "url": src["url"],
@@ -293,6 +324,8 @@ class GovCircularScraper:
                         "type": "pdf",
                         "text_preview": text[:500],
                     })
+                else:
+                    self._record_failure(src, RuntimeError("Unable to extract PDF text"))
             else:
                 items = self.scrape_html(src)
                 # Optionally follow and extract PDF links found during HTML scraping
@@ -302,6 +335,11 @@ class GovCircularScraper:
                             item["text_preview"] = self.extract_pdf_text(item["url"])[:500]
                 all_items.extend(items)
             time.sleep(1)  # Be polite to government servers
+        logger.info(
+            f"Scrape summary: {len(all_items)} items, "
+            f"{self.last_run_report['successful_sources']} successful sources, "
+            f"{self.last_run_report['failed_sources']} failed sources"
+        )
         return all_items
 
 

@@ -2,31 +2,50 @@ import { motion } from 'framer-motion'
 import { FiCheck, FiCpu, FiMap } from 'react-icons/fi'
 import { useEffect, useState } from 'react'
 import { predictCrop } from '../../services/cropService'
+import { useAuth } from '../../context/AuthContext'
+import { loadAnalysisHistory, saveAnalysisHistory } from '../../services/analysisHistory'
 
 export default function CropRecommendation() {
+  const { user } = useAuth()
   const [features, setFeatures] = useState({
     N: 90, P: 42, K: 43, temperature: 25.5, humidity: 70, ph: 6.5, rainfall: 200,
   })
   const [recommendations, setRecommendations] = useState([])
   const [loading, setLoading] = useState(false)
   const [summary, setSummary] = useState('')
+  const [error, setError] = useState('')
+  const [history, setHistory] = useState([])
+
+  useEffect(() => {
+    setHistory(loadAnalysisHistory('crop', user?.email || user?.id || 'guest'))
+  }, [user])
 
   const handlePredict = async () => {
     setLoading(true)
+    setError('')
     try {
       const result = await predictCrop(features, 5)
       setRecommendations(result.recommendations || [])
       setSummary(result.ai_summary || '')
+      const nextHistory = saveAnalysisHistory('crop', user?.email || user?.id || 'guest', {
+        id: result.timestamp,
+        timestamp: result.timestamp,
+        features,
+        topCrop: result.recommendations?.[0]?.crop || 'Unknown',
+        summary: result.ai_summary || '',
+        recommendations: (result.recommendations || []).slice(0, 3),
+      })
+      setHistory(nextHistory)
     } catch (err) {
       console.error('Failed to get crop recommendations:', err)
+      const backendMessage = err?.response?.data?.detail || err?.message || 'Unable to fetch crop recommendations right now.'
+      setError(backendMessage)
+      setRecommendations([])
+      setSummary('')
     } finally {
       setLoading(false)
     }
   }
-
-  useEffect(() => {
-    handlePredict()
-  }, [])
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -68,6 +87,13 @@ export default function CropRecommendation() {
             <motion.div className="glass-card border-emerald-500/20 bg-emerald-500/5" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
               <h2 className="text-xl font-extrabold mb-4">Ollama Explanation</h2>
               <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">{summary}</p>
+            </motion.div>
+          )}
+
+          {error && (
+            <motion.div className="glass-card border-red-500/20 bg-red-500/5" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <h2 className="text-xl font-extrabold mb-3 text-red-300">Prediction Error</h2>
+              <p className="text-sm text-red-200 leading-relaxed">{error}</p>
             </motion.div>
           )}
 
@@ -144,6 +170,27 @@ export default function CropRecommendation() {
                   <span className="text-[10px] font-extrabold text-emerald-400 uppercase">{item.score}</span>
                 </div>
               ))}
+            </div>
+          </motion.div>
+
+          <motion.div className="glass-card border-white/5" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.35 }}>
+            <h3 className="font-extrabold text-sm mb-6 uppercase tracking-widest">Recent Crop Analyses</h3>
+            <div className="space-y-3">
+              {history.length > 0 ? history.map((item) => (
+                <div key={item.id} className="p-3 glass bg-white/5 border-white/5 rounded-xl">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-bold capitalize text-emerald-400">{item.topCrop}</div>
+                      <div className="text-[11px] text-text-secondary">
+                        pH {item.features?.ph}, rainfall {item.features?.rainfall} mm, humidity {item.features?.humidity}%
+                      </div>
+                    </div>
+                    <div className="text-[10px] uppercase opacity-50">{new Date(item.timestamp).toLocaleString()}</div>
+                  </div>
+                </div>
+              )) : (
+                <div className="text-sm text-gray-500">No crop analysis history yet. Run the prediction engine to save your first result.</div>
+              )}
             </div>
           </motion.div>
         </div>

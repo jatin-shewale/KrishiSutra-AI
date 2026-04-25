@@ -2,12 +2,13 @@ import asyncio
 from typing import Optional
 
 import requests
+from loguru import logger
 
 from app.config import settings
 
 
 def candidate_models() -> list[str]:
-    models = [settings.OLLAMA_MODEL, "llama3", "llama3:8b"]
+    models = [settings.OLLAMA_MODEL]
     unique_models = []
     for model in models:
         if model and model not in unique_models:
@@ -38,8 +39,10 @@ def generate_text(prompt: str, system: Optional[str] = None, timeout: int = 90) 
             data = response.json()
             text = (data.get("response") or "").strip()
             if text:
+                logger.info(f"Ollama text generation succeeded with model: {model}")
                 return text
         except Exception as exc:
+            logger.warning(f"Ollama model '{model}' failed: {exc}")
             last_error = exc
 
     raise RuntimeError(f"Ollama request failed: {last_error}")

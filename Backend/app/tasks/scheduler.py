@@ -4,7 +4,7 @@ from app.scrapers.gov_circular_scraper import GovCircularScraper
 from app.rag.circular_rag import get_rag
 from app.db.mongo import mongo
 from loguru import logger
-from datetime import datetime
+from datetime import datetime, UTC
 
 scheduler = AsyncIOScheduler()
 
@@ -15,7 +15,7 @@ async def scrape_task():
         items = scraper.run_all()
         db = await mongo.get_or_connect_db()
         for item in items:
-            item["fetched_at"] = datetime.utcnow()
+            item["fetched_at"] = datetime.now(UTC)
             await db.gov_circulars.update_one({"url": item["url"]}, {"$set": item}, upsert=True)
         if items:
             rag = get_rag()
